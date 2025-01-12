@@ -1,74 +1,118 @@
-import pandas as pd
+import logging
+from multiprocessing import Pool
+
 import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score
+import pandas as pd
+from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, KMeansSMOTE, BorderlineSMOTE
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline
+from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
+from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.tree import DecisionTreeClassifier
 
-data = pd.read_csv('./data/creditcard.csv')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-X = data.drop(columns=['Class'])
-y = data['Class']
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+def test_balancing(modifier, models, X, y):
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
+    results = {}
 
-smote = SMOTE(random_state=42)
-X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)
+    for name, model in models.items():
+        logging.info(f"Testing with model: {name}")
+        accuracies = []
+        precisions = []
+        recalls = []
+        f1_scores = []
+        aucs = []
 
-# definicje klasyfikatorów
-# na razie wyłączyłem SVC bo dla takiej liczby rekordów się nie wykonuje najlepiej
-# dałem też LR na saga bo jest problem z liczbą iteracji na domyślnej
-rf = RandomForestClassifier(random_state=42)
-gb = GradientBoostingClassifier(random_state=42)
-dt = DecisionTreeClassifier(random_state=42)
-logreg = LogisticRegression(random_state=42, solver='saga', max_iter=1000)
-# svm = SVC(probability=True, random_state=42)
+        for train_index, test_index in cv.split(X, y):
+            logging.info(f"Fold {len(accuracies) + 1}/{cv.get_n_splits(X, y)}")
+            X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+            y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
-# homogeniczne i heterogeniczne
-ensemble_homogeneous = RandomForestClassifier(n_estimators=100, random_state=42)
-ensemble_heterogeneous = VotingClassifier(
-    estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
-)
+            X_train_smote, y_train_smote = modifier.fit_resample(X_train, y_train)
 
-models = {
-    'Random Forest': rf,
-    'Gradient Boosting': gb,
-    'Decision Tree': dt,
-    'Logistic Regression': logreg,
-    # 'SVM': svm,
-    'Homogeneous Ensemble': ensemble_homogeneous,
-    'Heterogeneous Ensemble': ensemble_heterogeneous
-}
+            model.fit(X_train_smote, y_train_smote)
+            y_pred = model.predict(X_test)
 
-results = {}
+            accuracies.append(accuracy_score(y_test, y_pred))
+            report = classification_report(y_test, y_pred, output_dict=True)
+            precisions.append(report['1']['precision'])
+            recalls.append(report['1']['recall'])
+            f1_scores.append(report['1']['f1-score'])
 
-for name, model in models.items():
-    pipeline = Pipeline([
-        ('smote', SMOTE(random_state=42)),
-        ('model', model)
-    ])
-    pipeline.fit(X_train, y_train)
-    y_pred = pipeline.predict(X_test)
+            if hasattr(model, 'predict_proba'):
+                aucs.append(roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
 
-    print(f"\nModel: {name}")
-    print(classification_report(y_test, y_pred))
-    print("Confusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+        logging.info(
+            f"Model: {name}: Accuracy: {np.mean(accuracies):.4f} (+/- {np.std(accuracies):.4f}); "
+            f"Precision: {np.mean(precisions):.4f} (+/- {np.std(precisions):.4f}); "
+            f"Recall: {np.mean(recalls):.4f} (+/- {np.std(recalls):.4f}); "
+            f"F1-score: {np.mean(f1_scores):.4f} (+/- {np.std(f1_scores):.4f})"
+        )
 
-    auc = roc_auc_score(y_test, pipeline.predict_proba(X_test)[:, 1]) if hasattr(model, 'predict_proba') else None
-    if auc:
-        print(f"ROC AUC: {auc:.4f}")
+        if aucs:
+            logging.info(f"ROC AUC: {np.mean(aucs):.4f} (+/- {np.std(aucs):.4f})")
 
-    results[name] = classification_report(y_test, y_pred, output_dict=True)
+        results[name] = {
+            'Accuracy': np.mean(accuracies),
+            'Precision': np.mean(precisions),
+            'Recall': np.mean(recalls),
+            'F1-score': np.mean(f1_scores),
+            'ROC AUC': np.mean(aucs) if aucs else None
+        }
+    return results
 
-print("\nPodsumowanie wyników:")
-for name, result in results.items():
-    print(f"Model: {name}")
-    print(f"Precision: {result['1']['precision']:.4f}")
-    print(f"Recall: {result['1']['recall']:.4f}")
-    print(f"F1-score: {result['1']['f1-score']:.4f}")
-    print("-")
+
+if __name__ == '__main__':
+    data = pd.read_csv('./data/creditcard.csv')
+
+    X = data.drop(columns=['Class'])
+    y = data['Class']
+
+    rf = RandomForestClassifier(random_state=42, n_estimators=2)
+    gb = GradientBoostingClassifier(random_state=42)
+    dt = DecisionTreeClassifier(random_state=42)
+    logreg = LogisticRegression(random_state=42, solver='saga', max_iter=1000)
+
+    ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
+    ensemble_heterogeneous = VotingClassifier(
+        estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
+    )
+
+    models = {
+        'Random Forest': rf,
+        'Gradient Boosting': gb,
+        'Decision Tree': dt,
+        'Logistic Regression': logreg,
+        'Homogeneous Ensemble': ensemble_homogeneous,
+        'Heterogeneous Ensemble': ensemble_heterogeneous
+    }
+
+    modifiers = {
+        "SMOTE": SMOTE(random_state=42),
+        "SMOTEN": SMOTEN(random_state=42),
+        "SVMSMOTE": SVMSMOTE(random_state=42),
+        "KMeansSMOTE": KMeansSMOTE(random_state=42),
+        "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
+    }
+
+    end_results = {}
+
+    for mod_name, modifier in modifiers.items():
+        logging.info(f"Testing {mod_name}")
+        end_results[mod_name] = test_balancing(modifier, models, X, y)
+
+    logging.info("\n" + 20 * "=" + "Summary:")
+    for name, part_dict in end_results.items():
+        logging.info(f"\n{name}")
+        for name, metrics in part_dict.items():
+            logging.info(f"Model: {name}")
+            logging.info(
+                f"Accuracy: {metrics['Accuracy']:.4f}; "
+                f"Precision: {metrics['Precision']:.4f}; "
+                f"Recall: {metrics['Recall']:.4f}; "
+                f"F1-score: {metrics['F1-score']:.4f}"
+            )
+            if metrics['ROC AUC'] is not None:
+                logging.info(f"ROC AUC: {metrics['ROC AUC']:.4f}")
