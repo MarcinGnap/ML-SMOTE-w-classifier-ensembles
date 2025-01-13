@@ -3,18 +3,70 @@ from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
-from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, KMeansSMOTE, BorderlineSMOTE
+from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, KMeansSMOTE, BorderlineSMOTE, ADASYN
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
 from sklearn.model_selection import RepeatedStratifiedKFold, train_test_split
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.cluster import KMeans
+from collections import Counter
+
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 from itertools import combinations
 import numpy as np
+
+
+def cluster_based_oversampling(X, y, n_clusters=10, random_state=42):
+    minority_class = y.value_counts().idxmin()
+    majority_class = y.value_counts().idxmax()
+
+    X_minority = X[y == minority_class]
+    y_minority = y[y == minority_class]
+
+    X_majority = X[y == majority_class]
+    y_majority = y[y == majority_class]
+
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
+    clusters = kmeans.fit_predict(X_minority)
+
+    oversampled_X = []
+    oversampled_y = []
+
+    for cluster in np.unique(clusters):
+        cluster_samples = X_minority[clusters == cluster]
+        n_samples_to_generate = len(X_majority) // n_clusters - len(cluster_samples)
+        if n_samples_to_generate > 0:
+            sampled_indices = np.random.choice(cluster_samples.index, n_samples_to_generate, replace=True)
+            oversampled_X.append(cluster_samples.loc[sampled_indices])
+            oversampled_y.append([minority_class] * n_samples_to_generate)
+
+    oversampled_X = pd.concat([X_majority] + oversampled_X)
+    oversampled_y = pd.concat([y_majority] + [pd.Series(ys) for ys in oversampled_y])
+
+    return oversampled_X, oversampled_y
+
+
+def weighted_random_oversample(X, y):
+    minority_class = y.value_counts().idxmin()
+    majority_class = y.value_counts().idxmax()
+
+    majority_X = X[y == majority_class]
+    majority_y = y[y == majority_class]
+
+    minority_X = X[y == minority_class]
+    minority_y = y[y == minority_class]
+
+    minority_X_oversampled = minority_X.sample(len(majority_y), replace=True, random_state=42)
+    minority_y_oversampled = minority_y.sample(len(majority_y), replace=True, random_state=42)
+
+    X_balanced = pd.concat([majority_X, minority_X_oversampled])
+    y_balanced = pd.concat([majority_y, minority_y_oversampled])
+
+    return X_balanced, y_balanced
 
 
 def disagreement_measure(predictions):
@@ -89,7 +141,17 @@ def test_balancing(modifier, models, X, y):
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
-            X_train_smote, y_train_smote = modifier.fit_resample(X_train, y_train)
+            # X_train_smote, y_train_smote = modifier.fit_resample(X_train, y_train)
+
+            if callable(modifier):
+                if modifier.__name__ == "generate_gan_samples":
+                    X_generated, y_generated = modifier(X_train, y_train, len(y_train))
+                    X_train_smote = pd.concat([X_train, X_generated])
+                    y_train_smote = pd.concat([y_train, pd.Series(y_generated)])
+                else:
+                    X_train_smote, y_train_smote = modifier(X_train, y_train)
+            else:
+                X_train_smote, y_train_smote = modifier.fit_resample(X_train, y_train)
 
             model.fit(X_train_smote, y_train_smote)
             y_pred = model.predict(X_test)
@@ -153,7 +215,10 @@ if __name__ == '__main__':
         "SMOTEN": SMOTEN(random_state=42),
         "SVMSMOTE": SVMSMOTE(random_state=42),
         "KMeansSMOTE": KMeansSMOTE(random_state=42),
-        "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
+        "BorderlineSMOTE": BorderlineSMOTE(random_state=42),
+        "ADASYN": ADASYN(random_state=42),
+        "Weighted Random Oversampling": weighted_random_oversample,
+        "Cluster-Based Oversampling": lambda X, y: cluster_based_oversampling(X, y, n_clusters=10, random_state=42)
     }
 
     end_results = {}
