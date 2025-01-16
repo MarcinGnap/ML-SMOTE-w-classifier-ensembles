@@ -118,6 +118,6 @@ if __name__ == '__main__':
     ]
 
     results_df = pd.DataFrame(csv_data)
-    results_df.to_csv('./results_diversity.csv', index=False)
+    results_df.to_csv('./data/results_diversity.csv', index=False)
 
     logging.info("Diversity metrics saved to 'results_diversity.csv'")

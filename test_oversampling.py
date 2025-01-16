@@ -133,6 +133,6 @@ if __name__ == '__main__':
             })
 
     results_df = pd.DataFrame(csv_results)
-    results_df.to_csv('./results_w_and_wo_modifiers.csv', index=False)
+    results_df.to_csv('./data/results_w_and_wo_modifiers.csv', index=False)
 
     logging.info("Summary saved to 'results_w_and_wo_modifiers.csv'")
