@@ -1,8 +1,7 @@
 import logging
-
 import numpy as np
 import pandas as pd
-from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, KMeansSMOTE, BorderlineSMOTE
+from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, BorderlineSMOTE
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
@@ -12,7 +11,7 @@ from sklearn.tree import DecisionTreeClassifier
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def test_balancing(modifier, models, X, y):
+def test_balancing(modifier, models, X, y, use_modifier=True):
     cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
     results = {}
 
@@ -29,9 +28,10 @@ def test_balancing(modifier, models, X, y):
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
-            X_train_smote, y_train_smote = modifier.fit_resample(X_train, y_train)
+            if use_modifier and modifier:
+                X_train, y_train = modifier.fit_resample(X_train, y_train)
 
-            model.fit(X_train_smote, y_train_smote)
+            model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
 
             accuracies.append(accuracy_score(y_test, y_pred))
@@ -64,11 +64,6 @@ def test_balancing(modifier, models, X, y):
 
 
 if __name__ == '__main__':
-    # data = pd.read_csv('./data/creditcard.csv')
-    #
-    # X = data.drop(columns=['Class'])
-    # y = data['Class']
-
     data = pd.read_csv('./data/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
@@ -94,25 +89,30 @@ if __name__ == '__main__':
     }
 
     modifiers = {
+        "No Modifier": None,
         "SMOTE": SMOTE(random_state=42),
         "SMOTEN": SMOTEN(random_state=42),
         "SVMSMOTE": SVMSMOTE(random_state=42),
-        # "KMeansSMOTE": KMeansSMOTE(random_state=42),
         "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
     }
 
     end_results = {}
-    csv_results = []
+
+    logging.info("Testing without modifiers (baseline)...")
+    end_results["No Modifier"] = test_balancing(None, models, X, y, use_modifier=False)
 
     for mod_name, modifier in modifiers.items():
-        logging.info(f"Testing {mod_name}")
-        end_results[mod_name] = test_balancing(modifier, models, X, y)
+        if mod_name != "No Modifier":
+            logging.info(f"Testing with modifier: {mod_name}")
+            end_results[mod_name] = test_balancing(modifier, models, X, y, use_modifier=True)
 
-    logging.info("\n" + 20 * "=" + "Summary:")
-    for mod_name, part_dict in end_results.items():
-        logging.info(f"\n{mod_name}")
-        for name, metrics in part_dict.items():
-            logging.info(f"Model: {name}")
+    logging.info("\n" + "=" * 20 + " Summary " + "=" * 20)
+    csv_results = []
+
+    for name, part_dict in end_results.items():
+        logging.info(f"\n{name}")
+        for model_name, metrics in part_dict.items():
+            logging.info(f"Model: {model_name}")
             logging.info(
                 f"Accuracy: {metrics['Accuracy']:.4f}; "
                 f"Precision: {metrics['Precision']:.4f}; "
@@ -123,8 +123,8 @@ if __name__ == '__main__':
                 logging.info(f"ROC AUC: {metrics['ROC AUC']:.4f}")
 
             csv_results.append({
-                "Modifier": mod_name,
-                "Model": name,
+                "Modifier": name,
+                "Model": model_name,
                 "Accuracy": metrics["Accuracy"],
                 "Precision": metrics["Precision"],
                 "Recall": metrics["Recall"],
@@ -132,7 +132,7 @@ if __name__ == '__main__':
                 "ROC AUC": metrics["ROC AUC"]
             })
 
-        results_df = pd.DataFrame(csv_results)
-        results_df.to_csv('./results_smote.csv', index=False)
+    results_df = pd.DataFrame(csv_results)
+    results_df.to_csv('./results_w_and_wo_modifiers.csv', index=False)
 
-        logging.info("Summary saved to 'results_smote.csv'")
+    logging.info("Summary saved to 'results_w_and_wo_modifiers.csv'")

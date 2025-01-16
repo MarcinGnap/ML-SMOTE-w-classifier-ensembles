@@ -215,10 +215,7 @@ if __name__ == '__main__':
         "SMOTEN": SMOTEN(random_state=42),
         "SVMSMOTE": SVMSMOTE(random_state=42),
         "KMeansSMOTE": KMeansSMOTE(random_state=42),
-        "BorderlineSMOTE": BorderlineSMOTE(random_state=42),
-        "ADASYN": ADASYN(random_state=42),
-        "Weighted Random Oversampling": weighted_random_oversample,
-        "Cluster-Based Oversampling": lambda X, y: cluster_based_oversampling(X, y, n_clusters=10, random_state=42)
+        "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
     }
 
     end_results = {}

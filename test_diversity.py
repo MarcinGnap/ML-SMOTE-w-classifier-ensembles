@@ -74,10 +74,15 @@ def train_ensembles(ensembles, X_train, y_train):
 
 
 if __name__ == '__main__':
-    data = pd.read_csv('./data/creditcard.csv')
+    # data = pd.read_csv('./data/creditcard.csv')
+    #
+    # X = data.drop(columns=['Class'])
+    # y = data['Class']
 
-    X = data.drop(columns=['Class'])
-    y = data['Class']
+    data = pd.read_csv('./data/telecom_churn.csv')
+
+    X = data.drop(columns=['Churn'])
+    y = data['Churn']
 
     rf = RandomForestClassifier(random_state=42, n_estimators=2)
     gb = GradientBoostingClassifier(random_state=42)
@@ -106,3 +111,13 @@ if __name__ == '__main__':
     logging.info("Heterogeneous Ensemble Diversity Metrics:")
     for metric, value in heterogeneous_diversity.items():
         logging.info(f"{metric}: {value:.4f}")
+
+    csv_data = [
+        {'Ensemble': 'Homogeneous', **homogeneous_diversity},
+        {'Ensemble': 'Heterogeneous', **heterogeneous_diversity}
+    ]
+
+    results_df = pd.DataFrame(csv_data)
+    results_df.to_csv('./results_diversity.csv', index=False)
+
+    logging.info("Diversity metrics saved to 'results_diversity.csv'")
