@@ -13,9 +13,10 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', da
 
 def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_modifier=True):
     cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
+    results = {}
 
     for name, model in models.items():
-        logging.info(f"Testing with model: {name} using modifier: {modifier_name}")
+        logging.info(f"Testing with model: {name}")
         accuracies = []
         precisions = []
         recalls = []
@@ -42,6 +43,7 @@ def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_
             if hasattr(model, 'predict_proba'):
                 aucs.append(roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
 
+
         mean_metrics = {
             'Accuracy': np.mean(accuracies),
             'Precision': np.mean(precisions),
@@ -49,6 +51,8 @@ def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_
             'F1-score': np.mean(f1_scores),
             'ROC AUC': np.mean(aucs) if aucs else None
         }
+
+        results[name] = {mean_metrics}
 
         logging.info(
             f"Model: {name}: Accuracy: {mean_metrics['Accuracy']:.4f} (+/- {np.std(accuracies):.4f}); "
@@ -69,6 +73,7 @@ def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_
             "ROC AUC": mean_metrics["ROC AUC"]
         }
         pd.DataFrame([result_row]).to_csv(results_csv_path, mode='a', header=not pd.io.common.file_exists(results_csv_path), index=False)
+    return results
 
 
 if __name__ == '__main__':
@@ -112,6 +117,7 @@ if __name__ == '__main__':
     }
 
     results_csv_path = './data/results_w_and_wo_modifiers.csv'
+    end_results= {}
 
     logging.info("Testing without modifiers (baseline)...")
     test_balancing(None, models, X, y, "No Modifier", results_csv_path, use_modifier=False)
@@ -122,3 +128,18 @@ if __name__ == '__main__':
             test_balancing(modifier, models, X, y, mod_name, results_csv_path, use_modifier=True)
 
     logging.info(f"Results saved to {results_csv_path}")
+
+    logging.info("\n" + "=" * 20 + " Summary " + "=" * 20)
+
+    for name, part_dict in end_results.items():
+        logging.info(f"\n{name}")
+        for model_name, metrics in part_dict.items():
+            logging.info(f"Model: {model_name}")
+            logging.info(
+                f"Accuracy: {metrics['Accuracy']:.4f}; "
+                f"Precision: {metrics['Precision']:.4f}; "
+                f"Recall: {metrics['Recall']:.4f}; "
+                f"F1-score: {metrics['F1-score']:.4f}"
+            )
+            if metrics['ROC AUC'] is not None:
+                logging.info(f"ROC AUC: {metrics['ROC AUC']:.4f}")
