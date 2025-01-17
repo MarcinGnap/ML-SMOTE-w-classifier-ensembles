@@ -14,7 +14,7 @@ from sklearn.tree import DecisionTreeClassifier
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def test_balancing(modifier, models, X, y):
+def test_balancing(result_csv_path, modifier, models, X, y):
     cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
     results = {}
 
@@ -64,61 +64,83 @@ def test_balancing(modifier, models, X, y):
             f"F1-score: {results[name]['F1-score']:.4f} (+/- {np.std(f1_scores):.4f})"
             f"ROC AUC: {results[name]['ROC AUC']:.4f} (+/- {np.std(aucs):.4f})" if aucs else ""
         )
-    return results
+
+        result_row = {
+            "Modifier": modifier.__class__.__name__,
+            "Model": name,
+            'Accuracy': np.mean(accuracies),
+            'Accuracy (std)': np.std(accuracies),
+            'Precision': np.mean(precisions),
+            'Precision (std)': np.std(precisions),
+            'Recall': np.mean(recalls),
+            'Recall (std)': np.std(recalls),
+            'F1-score': np.mean(f1_scores),
+            'F1-score (std)': np.std(f1_scores),
+            'ROC AUC': np.mean(aucs) if aucs else None,
+            'ROC AUC (std)': np.std(aucs) if aucs else None
+        }
+        pd.DataFrame([result_row]).to_csv(result_csv_path, mode='a', header=not pd.io.common.file_exists(result_csv_path), index=False)
 
 
 if __name__ == '__main__':
+
+    # data = pd.read_csv('./data/telecom_churn.csv')
+    #
+    # X = data.drop(columns=['Churn'])
+    # y = data['Churn']
+
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
-
-    data = pd.read_csv('./data/telecom_churn.csv')
-
-    X = data.drop(columns=['Churn'])
-    y = data['Churn']
-
-    rf = RandomForestClassifier(random_state=42, n_estimators=5)
-    gb = GradientBoostingClassifier(random_state=42)
-    dt = DecisionTreeClassifier(random_state=42)
-    logreg = LogisticRegression(random_state=42, max_iter=1000)
-
-    ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
-    ensemble_heterogeneous = VotingClassifier(
-        estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
-    )
-
-    models = {
-        'Homogeneous Ensemble': ensemble_homogeneous,
-        'Heterogeneous Ensemble': ensemble_heterogeneous
+    directory = 'data'
+    params = {
+        "telecom_churn.csv": "Churn",
+        "creditcard.csv": "Class",
+        "datasetsmall.csv": "FLAG",
+        "Ionosphere.csv"
     }
 
-    modifiers = {
-        "SMOTE": SMOTE(random_state=42),
-        "SMOTEN": SMOTEN(random_state=42),
-        "SVMSMOTE": SVMSMOTE(random_state=42),
-        "KMeansSMOTE": KMeansSMOTE(cluster_balance_threshold=0.001, random_state=42),
-        "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
-    }
+    csv_files = [f for f in os.listdir(directory) if f.endswith('.csv')]
 
-    end_results = {}
-    csv_results = []
+    for file in csv_files:
+        file_path = os.path.join(directory, file)
 
-    for mod_name, modifier in modifiers.items():
-        logging.info(f"Testing {mod_name}")
-        end_results[mod_name] = test_balancing(modifier, models, X, y)
+        data = pd.read_csv(file_path)
 
-    for mod_name, part_dict in end_results.items():
-        for name, metrics in part_dict.items():
-            csv_results.append({
-                "Modifier": mod_name,
-                "Model": name,
-                "Accuracy": metrics["Accuracy"],
-                "Precision": metrics["Precision"],
-                "Recall": metrics["Recall"],
-                "F1-score": metrics["F1-score"],
-                "ROC AUC": metrics["ROC AUC"]
-            })
+        if file in label1:
+            X = data.drop(columns=['Churn'])
+            y = data["Churn"]
+        else:
+            X = data.drop(index=-1)
+            y = data.get(-1)
 
-        results_df = pd.DataFrame(csv_results)
-        results_df.to_csv(os.path.join(output_dir, "results_smote.csv"), index=False)
+        rf = RandomForestClassifier(random_state=42, n_estimators=5)
+        gb = GradientBoostingClassifier(random_state=42)
+        dt = DecisionTreeClassifier(random_state=42)
+        logreg = LogisticRegression(random_state=42, max_iter=1000)
 
-    logging.info("Summary saved to 'results_smote.csv'")
+        ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
+        ensemble_heterogeneous = VotingClassifier(
+            estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
+        )
+
+        models = {
+            'Homogeneous Ensemble': ensemble_homogeneous,
+            'Heterogeneous Ensemble': ensemble_heterogeneous
+        }
+
+        modifiers = {
+            "SMOTE": SMOTE(random_state=42),
+            "SMOTEN": SMOTEN(random_state=42),
+            "SVMSMOTE": SVMSMOTE(random_state=42),
+            "KMeansSMOTE": KMeansSMOTE(cluster_balance_threshold=0.001, random_state=42),
+            "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
+        }
+
+        end_results = {}
+        save_file =  f"results_smote_{file}.csv"
+        result_csv_path = os.path.join(output_dir,)
+
+        for mod_name, modifier in modifiers.items():
+            logging.info(f"Testing {mod_name}")
+            end_results[mod_name] = test_balancing(result_csv_path, modifier, models, X, y)
+            logging.info(f"Summary saved to {result_csv_path}")

@@ -73,7 +73,7 @@ if __name__ == '__main__':
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
 
-    data = pd.read_csv('./data/telecom_churn.csv')
+    data = pd.read_csv('data/new/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
     y = data['Churn']

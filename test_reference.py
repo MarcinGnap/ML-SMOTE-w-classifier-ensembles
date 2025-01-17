@@ -13,7 +13,7 @@ from sklearn.tree import DecisionTreeClassifier
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def evaluate_model_with_logging(name, model, X, y):
+def evaluate_model_with_logging(result_csv_path, name, model, X, y):
     cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
     accuracies = []
     precisions = []
@@ -58,6 +58,23 @@ def evaluate_model_with_logging(name, model, X, y):
         f"ROC AUC: {mean_metrics['ROC AUC']:.4f} (+/- {np.std(aucs):.4f})" if aucs else ""
     )
 
+    result_row = {
+        # "Modifier": modifier.__class__.__name__,
+        "Model": name,
+        'Accuracy': np.mean(accuracies),
+        'Accuracy (std)': np.std(accuracies),
+        'Precision': np.mean(precisions),
+        'Precision (std)': np.std(precisions),
+        'Recall': np.mean(recalls),
+        'Recall (std)': np.std(recalls),
+        'F1-score': np.mean(f1_scores),
+        'F1-score (std)': np.std(f1_scores),
+        'ROC AUC': np.mean(aucs) if aucs else None,
+        'ROC AUC (std)': np.std(aucs) if aucs else None
+    }
+    pd.DataFrame([result_row]).to_csv(result_csv_path, mode='a', header=not pd.io.common.file_exists(result_csv_path),
+                                      index=False)
+
     return mean_metrics
 
 
@@ -65,7 +82,7 @@ if __name__ == '__main__':
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
 
-    data = pd.read_csv('./data/telecom_churn.csv')
+    data = pd.read_csv('data/new/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
     y = data['Churn']
@@ -91,13 +108,11 @@ if __name__ == '__main__':
     }
 
     results = []
+    result_csv_path = './output/results_reference.csv'
 
     for model_name, model in models.items():
         logging.info(f"Starting evaluation for {model_name}")
-        metrics = evaluate_model_with_logging(model_name, model, X, y)
+        metrics = evaluate_model_with_logging(result_csv_path, model_name, model, X, y)
         results.append({'Model': model_name, **metrics})
-
-    results_df = pd.DataFrame(results)
-    results_df.to_csv(os.path.join(output_dir, "results_reference.csv"), index=False)
 
     logging.info("All results saved to 'result_reference.csv'")
