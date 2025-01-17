@@ -110,7 +110,7 @@ if __name__ == '__main__':
             estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
         )
 
-        adaboost = AdaBoostClassifier(n_estimators=20, random_state=42)
+        adaboost = AdaBoostClassifier(n_estimators=10, random_state=42)
         easy_ensemble = EasyEnsembleClassifier(n_estimators=20, random_state=42)
 
         models = {
