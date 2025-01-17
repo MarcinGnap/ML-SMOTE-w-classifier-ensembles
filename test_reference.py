@@ -81,38 +81,50 @@ def evaluate_model_with_logging(result_csv_path, name, model, X, y):
 if __name__ == '__main__':
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
+    directory = 'data'
 
-    data = pd.read_csv('data/new/telecom_churn.csv')
+    label1 = ['1_telecom_churn.csv']
 
-    X = data.drop(columns=['Churn'])
-    y = data['Churn']
+    csv_files = [f for f in os.listdir(directory) if f.endswith('.csv')]
 
-    rf = RandomForestClassifier(random_state=42, n_estimators=5)
-    gb = GradientBoostingClassifier(random_state=42)
-    dt = DecisionTreeClassifier(random_state=42)
-    logreg = LogisticRegression(random_state=42, max_iter=1000)
+    for file in csv_files:
+        logging.info(f"Starting evaluation for {file}")
+        file_path = os.path.join(directory, file)
 
-    ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
-    ensemble_heterogeneous = VotingClassifier(
-        estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
-    )
+        data = pd.read_csv(file_path)
 
-    adaboost = AdaBoostClassifier(n_estimators=20, random_state=42)
-    easy_ensemble = EasyEnsembleClassifier(n_estimators=20, random_state=42)
+        if file in label1:
+            X = data.drop(columns=data.columns[0])
+            y = data.iloc[:, 0]
+        else:
+            X = data.drop(columns=data.columns[-1])
+            y = data.iloc[:, -1]
 
-    models = {
-        'Homogeneous Ensemble': ensemble_homogeneous,
-        'Heterogeneous Ensemble': ensemble_heterogeneous,
-        'AdaBoost': adaboost,
-        'EasyEnsemble': easy_ensemble
-    }
+        rf = RandomForestClassifier(random_state=42, n_estimators=5)
+        gb = GradientBoostingClassifier(random_state=42)
+        dt = DecisionTreeClassifier(random_state=42)
+        logreg = LogisticRegression(random_state=42, max_iter=1000)
 
-    results = []
-    result_csv_path = './output/results_reference.csv'
+        ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
+        ensemble_heterogeneous = VotingClassifier(
+            estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
+        )
 
-    for model_name, model in models.items():
-        logging.info(f"Starting evaluation for {model_name}")
-        metrics = evaluate_model_with_logging(result_csv_path, model_name, model, X, y)
-        results.append({'Model': model_name, **metrics})
+        adaboost = AdaBoostClassifier(n_estimators=20, random_state=42)
+        easy_ensemble = EasyEnsembleClassifier(n_estimators=20, random_state=42)
 
-    logging.info("All results saved to 'result_reference.csv'")
+        models = {
+            'Homogeneous Ensemble': ensemble_homogeneous,
+            'Heterogeneous Ensemble': ensemble_heterogeneous,
+            'AdaBoost': adaboost,
+            'EasyEnsemble': easy_ensemble
+        }
+
+        results = []
+        result_csv_path = os.path.join(output_dir, f"results_reference_{file}")
+
+        for model_name, model in models.items():
+            logging.info(f"Starting evaluation for {model_name}")
+            metrics = evaluate_model_with_logging(result_csv_path, model_name, model, X, y)
+
+        logging.info(f"All results saved to {result_csv_path}")

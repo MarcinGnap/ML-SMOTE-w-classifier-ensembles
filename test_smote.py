@@ -83,35 +83,26 @@ def test_balancing(result_csv_path, modifier, models, X, y):
 
 
 if __name__ == '__main__':
-
-    # data = pd.read_csv('./data/telecom_churn.csv')
-    #
-    # X = data.drop(columns=['Churn'])
-    # y = data['Churn']
-
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
     directory = 'data'
-    params = {
-        "telecom_churn.csv": "Churn",
-        "creditcard.csv": "Class",
-        "datasetsmall.csv": "FLAG",
-        "Ionosphere.csv"
-    }
+
+    label1 = ['1_telecom_churn.csv']
 
     csv_files = [f for f in os.listdir(directory) if f.endswith('.csv')]
 
     for file in csv_files:
+        logging.info(f"Starting evaluation for {file}")
         file_path = os.path.join(directory, file)
 
         data = pd.read_csv(file_path)
 
         if file in label1:
-            X = data.drop(columns=['Churn'])
-            y = data["Churn"]
+            X = data.drop(columns=data.columns[0])
+            y = data.iloc[:,0]
         else:
-            X = data.drop(index=-1)
-            y = data.get(-1)
+            X = data.drop(columns=data.columns[-1])
+            y = data.iloc[:,-1]
 
         rf = RandomForestClassifier(random_state=42, n_estimators=5)
         gb = GradientBoostingClassifier(random_state=42)
@@ -137,10 +128,9 @@ if __name__ == '__main__':
         }
 
         end_results = {}
-        save_file =  f"results_smote_{file}.csv"
-        result_csv_path = os.path.join(output_dir,)
+        result_csv_path = os.path.join(output_dir, f"results_smote_{file}")
 
         for mod_name, modifier in modifiers.items():
             logging.info(f"Testing {mod_name}")
             end_results[mod_name] = test_balancing(result_csv_path, modifier, models, X, y)
-            logging.info(f"Summary saved to {result_csv_path}")
+        logging.info(f"Summary saved to {result_csv_path}")
