@@ -120,12 +120,12 @@ if __name__ == '__main__':
     end_results= {}
 
     logging.info("Testing without modifiers (baseline)...")
-    test_balancing(None, models, X, y, "No Modifier", results_csv_path, use_modifier=False)
+    end_results["No Modifier"] = test_balancing(None, models, X, y, "No Modifier", results_csv_path, use_modifier=False)
 
     for mod_name, modifier in modifiers.items():
         if mod_name != "No Modifier":
             logging.info(f"Testing with modifier: {mod_name}")
-            test_balancing(modifier, models, X, y, mod_name, results_csv_path, use_modifier=True)
+            end_results[mod_name] = test_balancing(modifier, models, X, y, mod_name, results_csv_path, use_modifier=True)
 
     logging.info(f"Results saved to {results_csv_path}")
 
