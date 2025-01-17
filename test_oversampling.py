@@ -52,7 +52,7 @@ def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_
             'ROC AUC': np.mean(aucs) if aucs else None
         }
 
-        results[name] = {mean_metrics}
+        results[name] = mean_metrics
 
         logging.info(
             f"Model: {name}: Accuracy: {mean_metrics['Accuracy']:.4f} (+/- {np.std(accuracies):.4f}); "
@@ -77,16 +77,16 @@ def test_balancing(modifier, models, X, y, modifier_name, results_csv_path, use_
 
 
 if __name__ == '__main__':
-    # data = pd.read_csv('./data/creditcard.csv')
+    data = pd.read_csv('./data/creditcard.csv')
+
+    X = data.drop(columns=['Class'])
+    y = data['Class']
+
+
+    # data = pd.read_csv('./data/telecom_churn.csv')
     #
-    # X = data.drop(columns=['Class'])
-    # y = data['Class']
-
-
-    data = pd.read_csv('./data/telecom_churn.csv')
-
-    X = data.drop(columns=['Churn'])
-    y = data['Churn']
+    # X = data.drop(columns=['Churn'])
+    # y = data['Churn']
 
 
     rf = RandomForestClassifier(random_state=42, n_estimators=2)
