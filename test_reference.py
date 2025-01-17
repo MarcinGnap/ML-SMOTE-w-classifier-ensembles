@@ -1,85 +1,103 @@
 import logging
+import os
+
+import numpy as np
 import pandas as pd
+from imblearn.ensemble import EasyEnsembleClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, AdaBoostClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
+from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
-from imblearn.ensemble import EasyEnsembleClassifier
-import numpy as np
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 
-def evaluate_model_with_logging(model, X_train, X_test, y_train, y_test, model_name):
-    logging.info(f"Training model: {model_name}")
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else None
+def evaluate_model_with_logging(name, model, X, y):
+    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)
+    accuracies = []
+    precisions = []
+    recalls = []
+    f1_scores = []
+    aucs = []
 
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average='weighted')
-    recall = recall_score(y_test, y_pred, average='weighted')
-    f1 = f1_score(y_test, y_pred, average='weighted')
-    roc_auc = roc_auc_score(y_test, y_pred_proba) if y_pred_proba is not None else None
+    for train_index, test_index in cv.split(X, y):
+        logging.info(f"Fold {len(accuracies) + 1}/{cv.get_n_splits(X, y)}")
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
 
-    logging.info(f"{model_name} Evaluation Metrics:")
-    logging.info(f"Accuracy: {accuracy:.4f}")
-    logging.info(f"Precision: {precision:.4f}")
-    logging.info(f"Recall: {recall:.4f}")
-    logging.info(f"F1-score: {f1:.4f}")
-    if roc_auc is not None:
-        logging.info(f"ROC AUC: {roc_auc:.4f}")
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
-    return {
-        'Accuracy': accuracy,
-        'Precision': precision,
-        'Recall': recall,
-        'F1-score': f1,
-        'ROC AUC': roc_auc
+        accuracies.append(accuracy_score(y_test, y_pred))
+        precisions.append(precision_score(y_test, y_pred))
+        recalls.append(recall_score(y_test, y_pred))
+        f1_scores.append(f1_score(y_test, y_pred))
+
+        if hasattr(model, 'predict_proba'):
+            aucs.append(roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
+
+    mean_metrics = {
+        'Accuracy': np.mean(accuracies),
+        'Accuracy (std)': np.std(accuracies),
+        'Precision': np.mean(precisions),
+        'Precision (std)': np.std(precisions),
+        'Recall': np.mean(recalls),
+        'Recall (std)': np.std(recalls),
+        'F1-score': np.mean(f1_scores),
+        'F1-score (std)': np.std(f1_scores),
+        'ROC AUC': np.mean(aucs) if aucs else None,
+        'ROC AUC (std)': np.std(aucs) if aucs else None,
     }
+
+    logging.info(
+        f"Model: {name}: Accuracy: {mean_metrics['Accuracy']:.4f} (+/- {np.std(accuracies):.4f}); "
+        f"Precision: {mean_metrics['Precision']:.4f} (+/- {np.std(precisions):.4f}); "
+        f"Recall: {mean_metrics['Recall']:.4f} (+/- {np.std(recalls):.4f}); "
+        f"F1-score: {mean_metrics['F1-score']:.4f} (+/- {np.std(f1_scores):.4f})"
+        f"ROC AUC: {mean_metrics['ROC AUC']:.4f} (+/- {np.std(aucs):.4f})" if aucs else ""
+    )
+
+    return mean_metrics
 
 
 if __name__ == '__main__':
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
     data = pd.read_csv('./data/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
     y = data['Churn']
 
-    rf = RandomForestClassifier(random_state=42, n_estimators=2)
+    rf = RandomForestClassifier(random_state=42, n_estimators=5)
     gb = GradientBoostingClassifier(random_state=42)
     dt = DecisionTreeClassifier(random_state=42)
-    logreg = LogisticRegression(random_state=42, solver='saga', max_iter=1000)
+    logreg = LogisticRegression(random_state=42, max_iter=1000)
 
     ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
     ensemble_heterogeneous = VotingClassifier(
         estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
     )
 
-    adaboost = AdaBoostClassifier(random_state=42)
-    easy_ensemble = EasyEnsembleClassifier(random_state=42)
+    adaboost = AdaBoostClassifier(n_estimators=20, random_state=42)
+    easy_ensemble = EasyEnsembleClassifier(n_estimators=20, random_state=42)
 
     models = {
-        'Random Forest': rf,
-        'Gradient Boosting': gb,
-        'Decision Tree': dt,
-        'Logistic Regression': logreg,
         'Homogeneous Ensemble': ensemble_homogeneous,
         'Heterogeneous Ensemble': ensemble_heterogeneous,
         'AdaBoost': adaboost,
         'EasyEnsemble': easy_ensemble
     }
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
     results = []
 
     for model_name, model in models.items():
         logging.info(f"Starting evaluation for {model_name}")
-        metrics = evaluate_model_with_logging(model, X_train, X_test, y_train, y_test, model_name)
+        metrics = evaluate_model_with_logging(model_name, model, X, y)
         results.append({'Model': model_name, **metrics})
 
     results_df = pd.DataFrame(results)
-    results_df.to_csv('./data/result_reference.csv', index=False)
+    results_df.to_csv(os.path.join(output_dir, "results_reference.csv"), index=False)
 
     logging.info("All results saved to 'result_reference.csv'")

@@ -1,7 +1,9 @@
 import logging
+import os
 
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from imblearn.ensemble import EasyEnsembleClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, AdaBoostClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
@@ -43,10 +45,8 @@ def analyze_diversity(ensemble, X, transform=True):
         logging.error("Ensemble type not supported for diversity analysis.")
         return {}
 
-    # Calculate disagreement measure
     disagreement = disagreement_measure(predictions)
 
-    # Calculate pairwise Q-statistic and Cohen's Kappa
     q_stats = []
     kappas = []
     for pred1, pred2 in combinations(predictions, 2):
@@ -55,10 +55,6 @@ def analyze_diversity(ensemble, X, transform=True):
 
     avg_q_stat = np.mean(q_stats)
     avg_kappa = np.mean(kappas)
-
-    logging.info(f"Disagreement Measure: {disagreement:.4f}")
-    logging.info(f"Average Q-Statistic: {avg_q_stat:.4f}")
-    logging.info(f"Average Cohen's Kappa: {avg_kappa:.4f}")
 
     return {
         'Disagreement': disagreement,
@@ -74,50 +70,72 @@ def train_ensembles(ensembles, X_train, y_train):
 
 
 if __name__ == '__main__':
-    # data = pd.read_csv('./data/creditcard.csv')
-    #
-    # X = data.drop(columns=['Class'])
-    # y = data['Class']
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
 
     data = pd.read_csv('./data/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
     y = data['Churn']
 
-    rf = RandomForestClassifier(random_state=42, n_estimators=2)
+    rf = RandomForestClassifier(random_state=42, n_estimators=5)
     gb = GradientBoostingClassifier(random_state=42)
     dt = DecisionTreeClassifier(random_state=42)
-    logreg = LogisticRegression(random_state=42, solver='saga', max_iter=1000)
+    logreg = LogisticRegression(random_state=42, max_iter=1000)
 
     ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
     ensemble_heterogeneous = VotingClassifier(
         estimators=[('rf', rf), ('gb', gb), ('logreg', logreg)], voting='soft'
     )
+    adaboost = AdaBoostClassifier(n_estimators=20, random_state=42)
+    easy_ensemble = EasyEnsembleClassifier(n_estimators=20, random_state=42)
+    ensembles = [
+        ensemble_homogeneous, ensemble_heterogeneous, adaboost, easy_ensemble
+    ]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-    ensembles = train_ensembles([ensemble_homogeneous, ensemble_heterogeneous], X_train, y_train)
+    train_ensembles(ensembles, X_train, y_train)
 
-    logging.info("Diversity Analysis for Homogeneous Ensemble")
+    logging.info("Testing Homogeneous Ensemble...")
     homogeneous_diversity = analyze_diversity(ensemble_homogeneous, X)
 
-    logging.info("Diversity Analysis for Heterogeneous Ensemble")
+    logging.info("Testing Heterogeneous Ensemble...")
     heterogeneous_diversity = analyze_diversity(ensemble_heterogeneous, X, transform=False)
 
-    logging.info("\n" + 20 * "=" + " Diversity Summary:")
-    logging.info("Homogeneous Ensemble Diversity Metrics:")
-    for metric, value in homogeneous_diversity.items():
-        logging.info(f"{metric}: {value:.4f}")
+    logging.info("Testing AdaBoost...")
+    ada_diversity = analyze_diversity(adaboost, X, transform=True)
 
-    logging.info("Heterogeneous Ensemble Diversity Metrics:")
-    for metric, value in heterogeneous_diversity.items():
-        logging.info(f"{metric}: {value:.4f}")
+    logging.info("Testing Easy Ensemble...")
+    easy_diversity = analyze_diversity(easy_ensemble, X, transform=True)
+
+    metrics = "Homogeneous Ensemble Diversity Metrics: "
+    for metric, value in homogeneous_diversity.items():
+        metrics += f"{metric}: {value:.4f}; "
+    logging.info(metrics)
+
+    metrics = "Heterogeneous Ensemble Diversity Metrics: "
+    for metric, value in homogeneous_diversity.items():
+        metrics += f"{metric}: {value:.4f}; "
+    logging.info(metrics)
+
+    metrics = "AdaBoost Diversity Metrics: "
+    for metric, value in ada_diversity.items():
+        metrics += f"{metric}: {value:.4f}; "
+    logging.info(metrics)
+
+    metrics = "Easy Ensemble Diversity Metrics: "
+    for metric, value in easy_diversity.items():
+        metrics += f"{metric}: {value:.4f}; "
+    logging.info(metrics)
 
     csv_data = [
         {'Ensemble': 'Homogeneous', **homogeneous_diversity},
-        {'Ensemble': 'Heterogeneous', **heterogeneous_diversity}
+        {'Ensemble': 'Heterogeneous', **heterogeneous_diversity},
+        {'Ensemble': 'AdaBoost', **ada_diversity},
+        {'Ensemble': 'Easy Ensemble', **easy_diversity}
     ]
 
     results_df = pd.DataFrame(csv_data)
-    results_df.to_csv('./data/results_diversity.csv', index=False)
+    results_df.to_csv(os.path.join(output_dir, "results_diverity.csv"), index=False)
 
     logging.info("Diversity metrics saved to 'results_diversity.csv'")

@@ -1,11 +1,13 @@
 import logging
+import os.path
 
 import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE, SMOTEN, SVMSMOTE, KMeansSMOTE, BorderlineSMOTE
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, roc_auc_score, accuracy_score
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, \
+    f1_score
 from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
 
@@ -35,49 +37,49 @@ def test_balancing(modifier, models, X, y):
             y_pred = model.predict(X_test)
 
             accuracies.append(accuracy_score(y_test, y_pred))
-            report = classification_report(y_test, y_pred, output_dict=True)
-            precisions.append(report['1']['precision'])
-            recalls.append(report['1']['recall'])
-            f1_scores.append(report['1']['f1-score'])
+            precisions.append(precision_score(y_test, y_pred))
+            recalls.append(recall_score(y_test, y_pred))
+            f1_scores.append(f1_score(y_test, y_pred))
 
             if hasattr(model, 'predict_proba'):
                 aucs.append(roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]))
 
-        logging.info(
-            f"Model: {name}: Accuracy: {np.mean(accuracies):.4f} (+/- {np.std(accuracies):.4f}); "
-            f"Precision: {np.mean(precisions):.4f} (+/- {np.std(precisions):.4f}); "
-            f"Recall: {np.mean(recalls):.4f} (+/- {np.std(recalls):.4f}); "
-            f"F1-score: {np.mean(f1_scores):.4f} (+/- {np.std(f1_scores):.4f})"
-        )
-
-        if aucs:
-            logging.info(f"ROC AUC: {np.mean(aucs):.4f} (+/- {np.std(aucs):.4f})")
-
         results[name] = {
             'Accuracy': np.mean(accuracies),
+            'Accuracy (std)': np.std(accuracies),
             'Precision': np.mean(precisions),
+            'Precision (std)': np.std(precisions),
             'Recall': np.mean(recalls),
+            'Recall (std)': np.std(recalls),
             'F1-score': np.mean(f1_scores),
-            'ROC AUC': np.mean(aucs) if aucs else None
+            'F1-score (std)': np.std(f1_scores),
+            'ROC AUC': np.mean(aucs) if aucs else None,
+            'ROC AUC (std)': np.std(aucs) if aucs else None
         }
+
+        logging.info(
+            f"Modifier: {modifier} - Model: {name} -> Accuracy: {results[name]['Accuracy']:.4f} (+/- {np.std(accuracies):.4f}); "
+            f"Precision: {results[name]['Precision']:.4f} (+/- {np.std(precisions):.4f}); "
+            f"Recall: {results[name]['Recall']:.4f} (+/- {np.std(recalls):.4f}); "
+            f"F1-score: {results[name]['F1-score']:.4f} (+/- {np.std(f1_scores):.4f})"
+            f"ROC AUC: {results[name]['ROC AUC']:.4f} (+/- {np.std(aucs):.4f})" if aucs else ""
+        )
     return results
 
 
 if __name__ == '__main__':
-    # data = pd.read_csv('./data/creditcard.csv')
-    #
-    # X = data.drop(columns=['Class'])
-    # y = data['Class']
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
 
     data = pd.read_csv('./data/telecom_churn.csv')
 
     X = data.drop(columns=['Churn'])
     y = data['Churn']
 
-    rf = RandomForestClassifier(random_state=42, n_estimators=2)
+    rf = RandomForestClassifier(random_state=42, n_estimators=5)
     gb = GradientBoostingClassifier(random_state=42)
     dt = DecisionTreeClassifier(random_state=42)
-    logreg = LogisticRegression(random_state=42, solver='saga', max_iter=1000)
+    logreg = LogisticRegression(random_state=42, max_iter=1000)
 
     ensemble_homogeneous = RandomForestClassifier(n_estimators=20, random_state=42)
     ensemble_heterogeneous = VotingClassifier(
@@ -85,10 +87,6 @@ if __name__ == '__main__':
     )
 
     models = {
-        'Random Forest': rf,
-        'Gradient Boosting': gb,
-        'Decision Tree': dt,
-        'Logistic Regression': logreg,
         'Homogeneous Ensemble': ensemble_homogeneous,
         'Heterogeneous Ensemble': ensemble_heterogeneous
     }
@@ -97,7 +95,7 @@ if __name__ == '__main__':
         "SMOTE": SMOTE(random_state=42),
         "SMOTEN": SMOTEN(random_state=42),
         "SVMSMOTE": SVMSMOTE(random_state=42),
-        # "KMeansSMOTE": KMeansSMOTE(random_state=42),
+        "KMeansSMOTE": KMeansSMOTE(cluster_balance_threshold=0.001, random_state=42),
         "BorderlineSMOTE": BorderlineSMOTE(random_state=42)
     }
 
@@ -108,20 +106,8 @@ if __name__ == '__main__':
         logging.info(f"Testing {mod_name}")
         end_results[mod_name] = test_balancing(modifier, models, X, y)
 
-    logging.info("\n" + 20 * "=" + "Summary:")
     for mod_name, part_dict in end_results.items():
-        logging.info(f"\n{mod_name}")
         for name, metrics in part_dict.items():
-            logging.info(f"Model: {name}")
-            logging.info(
-                f"Accuracy: {metrics['Accuracy']:.4f}; "
-                f"Precision: {metrics['Precision']:.4f}; "
-                f"Recall: {metrics['Recall']:.4f}; "
-                f"F1-score: {metrics['F1-score']:.4f}"
-            )
-            if metrics['ROC AUC'] is not None:
-                logging.info(f"ROC AUC: {metrics['ROC AUC']:.4f}")
-
             csv_results.append({
                 "Modifier": mod_name,
                 "Model": name,
@@ -133,6 +119,6 @@ if __name__ == '__main__':
             })
 
         results_df = pd.DataFrame(csv_results)
-        results_df.to_csv('./data/results_smote.csv', index=False)
+        results_df.to_csv(os.path.join(output_dir, "results_smote.csv"), index=False)
 
-        logging.info("Summary saved to 'results_smote.csv'")
+    logging.info("Summary saved to 'results_smote.csv'")
